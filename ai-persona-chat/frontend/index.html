@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Persona Chat - Customer Success Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(214.3 31.8% 91.4%)",
+                        input: "hsl(214.3 31.8% 91.4%)",
+                        ring: "hsl(222.2 84% 4.9%)",
+                        background: "hsl(0 0% 100%)",
+                        foreground: "hsl(222.2 84% 4.9%)",
+                        primary: {
+                            DEFAULT: "hsl(222.2 47.4% 11.2%)",
+                            foreground: "hsl(210 40% 98%)",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(222.2 84% 4.9%)",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(215.4 16.3% 46.9%)",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(210 40% 96%)",
+                            foreground: "hsl(222.2 84% 4.9%)",
+                        },
+                        card: {
+                            DEFAULT: "hsl(0 0% 100%)",
+                            foreground: "hsl(222.2 84% 4.9%)",
+                        },
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        .chat-bubble {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .typing-indicator {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        .persona-card {
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .persona-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="gradient-bg rounded-lg p-2">
+                        <i data-lucide="bot" class="w-6 h-6 text-white"></i>
+                    </div>
+                    <h1 class="text-xl font-semibold text-slate-900">AI Persona Chat</h1>
+                </div>
+                <div class="text-sm text-slate-600">Customer Success Simulator</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Persona Selection View -->
+        <div id="persona-selection" class="space-y-6">
+            <div class="text-center">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Choose a Customer Persona</h2>
+                <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                    Practice your customer success conversations with AI-powered personas representing different customer types.
+                    Each persona has unique challenges, communication styles, and business contexts.
+                </p>
+            </div>
+            
+            <div id="personas-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Personas will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div id="chat-interface" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-12rem)]">
+                <!-- Persona Info Sidebar -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 h-full">
+                        <div id="persona-info">
+                            <!-- Persona details will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Area -->
+                <div class="lg:col-span-3">
+                    <div class="bg-white rounded-lg border border-slate-200 shadow-sm h-full flex flex-col">
+                        <!-- Chat Header -->
+                        <div class="flex items-center justify-between p-4 border-b border-slate-200">
+                            <div class="flex items-center space-x-3">
+                                <div id="chat-avatar" class="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold">
+                                    <!-- Avatar will be set dynamically -->
+                                </div>
+                                <div>
+                                    <h3 id="chat-persona-name" class="font-semibold text-slate-900"></h3>
+                                    <p id="chat-persona-title" class="text-sm text-slate-600"></p>
+                                </div>
+                            </div>
+                            <button 
+                                id="back-button"
+                                class="inline-flex items-center px-3 py-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                            >
+                                <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>
+                                Back to Personas
+                            </button>
+                        </div>
+
+                        <!-- Chat Messages -->
+                        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+                            <!-- Messages will appear here -->
+                        </div>
+
+                        <!-- Chat Input -->
+                        <div class="border-t border-slate-200 p-4">
+                            <div class="flex space-x-3">
+                                <input
+                                    type="text"
+                                    id="message-input"
+                                    placeholder="Type your message to the customer..."
+                                    class="flex-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <button
+                                    id="send-button"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <i data-lucide="send" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global state
+        let currentPersona = null;
+        let currentSessionId = null;
+        let personas = [];
+
+        // API base URL
+        const API_BASE = 'http://localhost:8000/api';
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadPersonas();
+            setupEventListeners();
+        });
+
+        // Load personas from API
+        async function loadPersonas() {
+            try {
+                const response = await fetch(`${API_BASE}/personas`);
+                personas = await response.json();
+                renderPersonasGrid();
+            } catch (error) {
+                console.error('Error loading personas:', error);
+                showError('Failed to load personas. Please check if the backend is running.');
+            }
+        }
+
+        // Render personas grid
+        function renderPersonasGrid() {
+            const grid = document.getElementById('personas-grid');
+            grid.innerHTML = '';
+
+            personas.forEach(persona => {
+                const card = createPersonaCard(persona);
+                grid.appendChild(card);
+            });
+        }
+
+        // Create persona card element
+        function createPersonaCard(persona) {
+            const card = document.createElement('div');
+            card.className = 'persona-card bg-white rounded-lg border border-slate-200 shadow-sm cursor-pointer overflow-hidden';
+            card.onclick = () => selectPersona(persona);
+
+            const riskColor = {
+                'Low': 'bg-green-100 text-green-800',
+                'Medium': 'bg-yellow-100 text-yellow-800',
+                'High': 'bg-red-100 text-red-800'
+            };
+
+            card.innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="${persona.avatar_color} rounded-full w-12 h-12 flex items-center justify-center text-white font-semibold text-lg">
+                            ${persona.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-slate-900">${persona.name}</h3>
+                            <p class="text-sm text-slate-600">${persona.title}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <span class="text-slate-500">Company Size:</span>
+                                <div class="font-medium">${persona.company_size} employees</div>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Monthly Spend:</span>
+                                <div class="font-medium">${persona.monthly_spend}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center justify-between">
+                            <div class="text-sm">
+                                <span class="text-slate-500">Sentiment:</span>
+                                <span class="font-medium ${persona.sentiment_score > 0.5 ? 'text-green-600' : persona.sentiment_score < 0 ? 'text-red-600' : 'text-yellow-600'}">
+                                    ${persona.sentiment_score > 0.5 ? 'Positive' : persona.sentiment_score < 0 ? 'Negative' : 'Neutral'}
+                                </span>
+                            </div>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${riskColor[persona.churn_risk]}">
+                                ${persona.churn_risk} Risk
+                            </span>
+                        </div>
+                        
+                        <p class="text-sm text-slate-600 line-clamp-2">${persona.personality_summary}</p>
+                        
+                        <div class="pt-2">
+                            <div class="flex flex-wrap gap-1">
+                                ${persona.key_traits.slice(0, 3).map(trait => 
+                                    `<span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">${trait}</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="px-6 py-3 bg-slate-50 border-t border-slate-200">
+                    <div class="flex items-center justify-center text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                        <i data-lucide="message-circle" class="w-4 h-4 mr-2"></i>
+                        Start Conversation
+                    </div>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Select persona and start chat
+        async function selectPersona(persona) {
+            currentPersona = persona;
+            currentSessionId = generateSessionId();
+            
+            // Switch to chat interface
+            document.getElementById('persona-selection').classList.add('hidden');
+            document.getElementById('chat-interface').classList.remove('hidden');
+            
+            // Update chat header
+            document.getElementById('chat-avatar').className = `w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold ${persona.avatar_color}`;
+            document.getElementById('chat-avatar').textContent = persona.name.split(' ').map(n => n[0]).join('');
+            document.getElementById('chat-persona-name').textContent = persona.name;
+            document.getElementById('chat-persona-title').textContent = persona.title;
+            
+            // Update persona info sidebar
+            updatePersonaInfo(persona);
+            
+            // Clear previous messages
+            document.getElementById('chat-messages').innerHTML = '';
+            
+            // Add welcome message
+            addWelcomeMessage(persona);
+            
+            // Reinitialize icons for new content
+            lucide.createIcons();
+        }
+
+        // Update persona info sidebar
+        function updatePersonaInfo(persona) {
+            const infoContainer = document.getElementById('persona-info');
+            
+            const riskColor = {
+                'Low': 'bg-green-100 text-green-800',
+                'Medium': 'bg-yellow-100 text-yellow-800',
+                'High': 'bg-red-100 text-red-800'
+            };
+
+            infoContainer.innerHTML = `
+                <div class="space-y-6">
+                    <div class="text-center">
+                        <div class="${persona.avatar_color} rounded-full w-16 h-16 flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">
+                            ${persona.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        <h3 class="font-semibold text-slate-900">${persona.name}</h3>
+                        <p class="text-sm text-slate-600">${persona.title}</p>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="font-medium text-slate-900 mb-2">Company Context</h4>
+                            <p class="text-sm text-slate-600">${persona.company_context}</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span class="text-slate-500">Size:</span>
+                                <div class="font-medium">${persona.company_size} employees</div>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Spend:</span>
+                                <div class="font-medium">${persona.monthly_spend}/mo</div>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Sentiment:</span>
+                                <div class="font-medium ${persona.sentiment_score > 0.5 ? 'text-green-600' : persona.sentiment_score < 0 ? 'text-red-600' : 'text-yellow-600'}">
+                                    ${persona.sentiment_score > 0 ? '+' : ''}${persona.sentiment_score}
+                                </div>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Risk:</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${riskColor[persona.churn_risk]}">
+                                    ${persona.churn_risk}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-medium text-slate-900 mb-2">Key Traits</h4>
+                            <div class="flex flex-wrap gap-1">
+                                ${persona.key_traits.map(trait => 
+                                    `<span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">${trait}</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-medium text-slate-900 mb-2">Communication Style</h4>
+                            <p class="text-sm text-slate-600">${persona.communication_style}</p>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-medium text-slate-900 mb-2">Main Pain Points</h4>
+                            <ul class="text-sm text-slate-600 space-y-1">
+                                ${persona.pain_points.slice(0, 3).map(pain => 
+                                    `<li class="flex items-start space-x-2">
+                                        <span class="text-red-400 mt-1">•</span>
+                                        <span>${pain}</span>
+                                    </li>`
+                                ).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-medium text-slate-900 mb-2">Current Goals</h4>
+                            <ul class="text-sm text-slate-600 space-y-1">
+                                ${persona.goals.slice(0, 3).map(goal => 
+                                    `<li class="flex items-start space-x-2">
+                                        <span class="text-green-400 mt-1">•</span>
+                                        <span>${goal}</span>
+                                    </li>`
+                                ).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Add welcome message
+        function addWelcomeMessage(persona) {
+            const welcomeMessages = {
+                'scaling_sam': "Hi there! Great to hear from our Customer Success team. We're growing so fast right now, it's exciting but also creating some challenges. What can I help you with today?",
+                'budget_betty': "Hello! I appreciate you reaching out. I hope this isn't about any price increases - we're really watching our budget carefully these days. What did you need to discuss?",
+                'tech_tom': "Hey! Always good to chat with the CS team. I've actually been diving deep into your API documentation lately and have some thoughts. What brings you by today?",
+                'simple_susan': "Hi! Thank you for calling. I hope everything is working okay with our account? I'm not very technical, so I always appreciate when you check in on us.",
+                'demanding_dan': "Good afternoon. I trust this is about improving our service level? We've had some concerns lately that need addressing. What's the purpose of this call?",
+                'loyal_linda': "Hello! So wonderful to hear from you! You know how much we appreciate your service. We've been customers for three years now and couldn't be happier. How can I help you today?",
+                'trial_tina': "Hi there! Perfect timing actually - I've been evaluating a few different solutions for our clients. I'm curious to see what new features you might have. What's new?",
+                'enterprise_emma': "Good afternoon. Thank you for reaching out. I have about 15 minutes before my next stakeholder meeting. What customer success initiatives did you want to discuss today?"
+            };
+
+            const message = welcomeMessages[persona.id] || "Hello! Thanks for reaching out. How can I help you today?";
+            addMessage(message, 'ai');
+        }
+
+        // Add message to chat
+        function addMessage(content, sender, timestamp = null) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-bubble flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+            
+            const time = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+            
+            messageDiv.innerHTML = `
+                <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                    sender === 'user' 
+                        ? 'bg-indigo-600 text-white' 
+                        : 'bg-slate-100 text-slate-900'
+                }">
+                    <p class="text-sm">${content}</p>
+                    <p class="text-xs mt-1 opacity-70">${time}</p>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Add typing indicator
+        function addTypingIndicator() {
+            const messagesContainer = document.getElementById('chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing-indicator';
+            typingDiv.className = 'flex justify-start';
+            
+            typingDiv.innerHTML = `
+                <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-slate-100">
+                    <div class="flex space-x-1 items-center">
+                        <div class="flex space-x-1">
+                            <div class="w-2 h-2 bg-slate-400 rounded-full typing-indicator"></div>
+                            <div class="w-2 h-2 bg-slate-400 rounded-full typing-indicator" style="animation-delay: 0.2s;"></div>
+                            <div class="w-2 h-2 bg-slate-400 rounded-full typing-indicator" style="animation-delay: 0.4s;"></div>
+                        </div>
+                        <span class="text-xs text-slate-500 ml-2">${currentPersona.name} is typing...</span>
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(typingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Remove typing indicator
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message || !currentPersona) return;
+            
+            // Disable input and button
+            const sendButton = document.getElementById('send-button');
+            input.disabled = true;
+            sendButton.disabled = true;
+            
+            // Add user message
+            addMessage(message, 'user');
+            input.value = '';
+            
+            // Add typing indicator
+            addTypingIndicator();
+            
+            try {
+                const response = await fetch(`${API_BASE}/chat/${currentPersona.id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: currentSessionId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to send message');
+                }
+                
+                const data = await response.json();
+                
+                // Remove typing indicator
+                removeTypingIndicator();
+                
+                // Add AI response
+                addMessage(data.response, 'ai', data.timestamp);
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                removeTypingIndicator();
+                addMessage("I'm sorry, I'm having trouble responding right now. Please try again.", 'ai');
+            } finally {
+                // Re-enable input and button
+                input.disabled = false;
+                sendButton.disabled = false;
+                input.focus();
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Back button
+            document.getElementById('back-button').onclick = () => {
+                document.getElementById('chat-interface').classList.add('hidden');
+                document.getElementById('persona-selection').classList.remove('hidden');
+                currentPersona = null;
+                currentSessionId = null;
+            };
+            
+            // Send button
+            document.getElementById('send-button').onclick = sendMessage;
+            
+            // Enter key in input
+            document.getElementById('message-input').onkeypress = (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            };
+        }
+
+        // Utility functions
+        function generateSessionId() {
+            return 'session_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function showError(message) {
+            console.error(message);
+            // You could add a toast notification here
+        }
+    </script>
+</body>
+</html>
