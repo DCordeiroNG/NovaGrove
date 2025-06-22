@@ -5,3 +5,4 @@ python-multipart==0.0.6
 transformers==4.35.2
 torch==2.2.2
 accelerate==0.24.1
+numpy<2.0.0

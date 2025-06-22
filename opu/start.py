@@ -38,8 +38,14 @@ def install_dependencies():
     else:
         pip_path = Path("venv/bin/pip")
     
-    # Install requirements
-    subprocess.run([str(pip_path), "install", "-r", "requirements.txt"])
+    # Install requirements + requests for startup script
+    result = subprocess.run([str(pip_path), "install", "-r", "requirements.txt", "requests"], 
+                          capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"❌ Failed to install dependencies: {result.stderr}")
+        sys.exit(1)
+    
     print("✅ Dependencies installed")
 
 def check_files():
@@ -63,34 +69,43 @@ def start_backend():
     else:
         python_path = Path("venv/bin/python")
     
-    # Start backend as subprocess
+    # Start backend - show output for debugging
+    print("   💡 Backend output will show below:")
     backend_process = subprocess.Popen(
-        [str(python_path), "main.py"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True
+        [str(python_path), "main.py"]
+        # No stdout/stderr capture so you can see what's happening
     )
     
     # Wait for backend to start
     print("⏳ Waiting for backend to initialize...")
-    print("   (First run will download AI model ~1.5GB)")
+    print("   (First run may take 30-60 seconds to load AI model)")
     
-    # Give it some time to start
+    # Give it some time to start and try to connect
     for i in range(30):  # Wait up to 30 seconds
         time.sleep(1)
-        # Check if backend is responsive
+        
+        # Try to check if backend is responsive
         try:
-            import requests
-            response = requests.get("http://localhost:8000")
-            if response.status_code == 200:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('localhost', 8000))
+            sock.close()
+            
+            if result == 0:  # Port is open
                 print("✅ Backend is running!")
+                time.sleep(2)  # Give it a moment to fully initialize
                 return backend_process
-        except:
-            if i % 5 == 0:
-                print(f"   Still starting... ({i}s)")
+                
+        except Exception:
+            pass
+        
+        if i % 5 == 0 and i > 0:
+            print(f"   Still starting... ({i}s)")
     
-    print("⚠️  Backend is taking longer than expected to start")
-    print("   Check the console for any errors")
+    print("⚠️  Backend is taking longer than expected")
+    print("   Check the output above for any errors")
+    print("   The system may still work - continuing anyway...")
     return backend_process
 
 def start_frontend():
@@ -103,22 +118,41 @@ def start_frontend():
     else:
         python_path = Path("venv/bin/python")
     
+    print("   Starting HTTP server on port 8080...")
     frontend_process = subprocess.Popen(
-        [str(python_path), "-m", "http.server", "8080"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        [str(python_path), "-m", "http.server", "8080"]
     )
     
-    time.sleep(2)  # Give it a moment to start
-    print("✅ Frontend server running at http://localhost:8080")
+    time.sleep(3)  # Give it a moment to start
+    
+    # Test if frontend is running
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('localhost', 8080))
+        sock.close()
+        
+        if result == 0:
+            print("✅ Frontend server running at http://localhost:8080")
+        else:
+            print("⚠️  Frontend may not have started properly")
+            
+    except Exception:
+        print("⚠️  Could not verify frontend status")
     
     return frontend_process
 
 def open_browser():
     """Open the application in default browser"""
     print("\n🌍 Opening browser...")
-    time.sleep(1)
-    webbrowser.open("http://localhost:8080")
+    time.sleep(2)
+    try:
+        webbrowser.open("http://localhost:8080")
+        print("✅ Browser should open automatically")
+    except Exception as e:
+        print(f"⚠️  Could not open browser automatically: {e}")
+        print("   Please manually open: http://localhost:8080")
 
 def main():
     """Main startup sequence"""
@@ -135,36 +169,71 @@ def main():
         install_dependencies()
         
         # Start services
+        print("\n" + "="*50)
         backend = start_backend()
+        
+        print("\n" + "="*50)
         frontend = start_frontend()
         
         # Open browser
         open_browser()
         
-        print("\n✨ AI Persona Chat is running!")
+        print("\n" + "="*50)
+        print("✨ AI Persona Chat is running!")
         print("\n📍 URLs:")
-        print("   Frontend: http://localhost:8080")
-        print("   Backend API: http://localhost:8000")
-        print("   API Docs: http://localhost:8000/docs")
+        print("   🎭 Frontend: http://localhost:8080")
+        print("   🔧 Backend API: http://localhost:8000")
+        print("   📖 API Docs: http://localhost:8000/docs")
         
         print("\n⚡ Quick Tips:")
-        print("   - Each persona has unique trigger words")
+        print("   - Try Enterprise Emma first")
+        print("   - Use positive words like 'ROI', 'security'")
         print("   - Watch the mood indicator change")
-        print("   - Try different approaches with each persona")
         
-        print("\n🛑 Press Ctrl+C to stop all services\n")
+        print("\n🛑 Press Ctrl+C to stop all services")
+        print("   (You may need to press it twice)")
+        print("\n" + "="*50)
         
-        # Keep running
+        # Keep running and handle shutdown
         try:
-            backend.wait()
+            while True:
+                # Check if processes are still running
+                if backend.poll() is not None:
+                    print("\n❌ Backend process stopped unexpectedly")
+                    break
+                if frontend.poll() is not None:
+                    print("\n❌ Frontend process stopped unexpectedly")
+                    break
+                time.sleep(1)
+                
         except KeyboardInterrupt:
-            print("\n\n👋 Shutting down...")
-            backend.terminate()
-            frontend.terminate()
-            print("✅ All services stopped")
+            print("\n\n👋 Shutting down gracefully...")
+            
+            try:
+                backend.terminate()
+                frontend.terminate()
+                
+                # Wait a bit for graceful shutdown
+                time.sleep(2)
+                
+                # Force kill if still running
+                if backend.poll() is None:
+                    backend.kill()
+                if frontend.poll() is None:
+                    frontend.kill()
+                    
+                print("✅ All services stopped")
+                
+            except Exception as e:
+                print(f"⚠️  Error during shutdown: {e}")
             
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n❌ Startup Error: {e}")
+        print("\n🔧 Troubleshooting:")
+        print("   1. Make sure you're in the correct directory")
+        print("   2. Check that all files exist")
+        print("   3. Try running manually:")
+        print("      python main.py")
         sys.exit(1)
 
 if __name__ == "__main__":
