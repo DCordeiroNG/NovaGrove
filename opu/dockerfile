@@ -1,0 +1,38 @@
+# Use Python 3.11 slim image
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download the DialoGPT model during build
+RUN python -c "from transformers import AutoTokenizer, AutoModelForCausalLM; \
+    AutoTokenizer.from_pretrained('microsoft/DialoGPT-medium'); \
+    AutoModelForCausalLM.from_pretrained('microsoft/DialoGPT-medium')"
+
+# Copy application files
+COPY main.py .
+COPY index.html .
+
+# Expose ports
+EXPOSE 8000 8080
+
+# Create a simple startup script
+RUN echo '#!/bin/bash\n\
+python main.py &\n\
+python -m http.server 8080 &\n\
+wait' > start.sh && chmod +x start.sh
+
+# Run the application
+CMD ["./start.sh"]

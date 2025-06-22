@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  ai-persona-chat:
+    build: .
+    container_name: ai-persona-chat
+    ports:
+      - "8000:8000"  # Backend API
+      - "8080:8080"  # Frontend
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount model cache to avoid re-downloading
+      - model_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  model_cache:
+    driver: local
