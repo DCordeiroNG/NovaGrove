@@ -1,9 +1,0 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-sqlalchemy==2.0.23
-python-multipart==0.0.6
-transformers==4.46.0
-torch==2.7.1
-tokenizers==0.20.0
-accelerate==1.1.1
