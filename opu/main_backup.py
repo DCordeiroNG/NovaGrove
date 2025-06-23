@@ -25,70 +25,54 @@ signal.signal(signal.SIGINT, signal_handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan with Microsoft Phi-2 model loading (Fixed device mapping)"""
-    print("🎭 AI Persona Chat System - Starting with Microsoft Phi-2")
-    print("=" * 50)
+    """Lifespan with timeout and fallback"""
+    print("🎭 AI Persona Chat System - Starting")
+    print("=" * 40)
     
+    # Try to load model with timeout
     model_loaded = False
     
     try:
-        print("🤖 Attempting to load Microsoft Phi-2...")
-        print("⏰ This may take 2-3 minutes on first run...")
+        print("🤖 Attempting to load DialoGPT model...")
+        print("⏰ Will timeout after 60 seconds if hanging...")
         
-        async def load_phi2():
-            from transformers import AutoTokenizer, AutoModelForCausalLM
+        # Use asyncio.wait_for to add timeout
+        async def load_model():
             import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            # Microsoft Phi-2 - fixed device mapping
-            model_name = "microsoft/phi-2"
+            print("📄 Loading tokenizer...")
+            tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
             
-            print("📄 Loading Phi-2 tokenizer...")
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            
-            print("🧠 Loading Phi-2 model...")
-            
-            # Determine device and dtype based on available hardware
-            if torch.cuda.is_available():
-                device = "cuda"
-                torch_dtype = torch.float16
-                print("🚀 Using GPU (CUDA) with float16")
-            else:
-                device = "cpu"
-                torch_dtype = torch.float32
-                print("🖥️ Using CPU with float32")
-            
-            # Load model without device_map='auto'
+            print("🧠 Loading model...")
             model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch_dtype,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
+                "microsoft/DialoGPT-medium",
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=True,  # Use less memory during loading
+                device_map=None,  # Force CPU to avoid GPU issues
             )
             
-            # Manually move to device
-            model = model.to(device)
-            
-            # Set pad token
+            # Add padding token
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
             
-            print(f"✅ Model loaded on: {device}")
             return tokenizer, model
         
+        # Try loading with 60-second timeout
         try:
-            tokenizer, model = await asyncio.wait_for(load_phi2(), timeout=600.0)  # 10 minutes
+            tokenizer, model = await asyncio.wait_for(load_model(), timeout=60.0)
             ml_models["tokenizer"] = tokenizer
             ml_models["model"] = model
             model_loaded = True
-            print("✅ Phi-2 loaded successfully!")
+            print("✅ Model loaded successfully!")
             
         except asyncio.TimeoutError:
-            print("⏰ Model loading timed out after 10 minutes")
+            print("⏰ Model loading timed out after 60 seconds")
             print("🔄 Falling back to simple responses...")
             model_loaded = False
             
     except Exception as e:
-        print(f"❌ Error loading Phi-2: {e}")
+        print(f"❌ Error loading model: {e}")
         print("🔄 Falling back to simple responses...")
         model_loaded = False
     
@@ -107,7 +91,7 @@ async def lifespan(app: FastAPI):
     print("\n🧹 Cleaning up...")
     ml_models.clear()
 
-app = FastAPI(title="AI Persona Chat API - Phi-2 Powered", lifespan=lifespan)
+app = FastAPI(title="AI Persona Chat API", lifespan=lifespan)
 
 # Add CORS middleware
 app.add_middleware(
@@ -156,7 +140,7 @@ class Persona(BaseModel):
     formality_level: str
     backstory: str
 
-# Enterprise Emma persona
+# Enterprise Emma - Production Quality Persona
 PERSONAS_DATA = {
     "enterprise_emma": {
         "id": "enterprise_emma",
@@ -201,6 +185,7 @@ PERSONAS_DATA = {
     }
 }
 
+# Convert to Persona objects
 PERSONAS = {k: Persona(**v) for k, v in PERSONAS_DATA.items()}
 
 # Session state management
@@ -215,7 +200,7 @@ class SessionState:
                 "conversation_history": [],
                 "current_mood": PERSONAS[persona_id].sentiment_score,
                 "interaction_count": 0,
-                "context_violations": 0,
+                "context_violations": 0,  # Track gaming attempts
                 "last_warning": None
             }
         return self.sessions[session_id]
@@ -230,10 +215,13 @@ class SessionState:
 
 session_state = SessionState()
 
-# Anti-Gaming Protection
+# Anti-Gaming Protection System
 class AntiGamingProtection:
+    """4-layer defense system to prevent breaking character"""
+    
     @staticmethod
     def detect_jailbreak_attempts(message: str) -> bool:
+        """Layer 1: Detect common jailbreak patterns"""
         jailbreak_patterns = [
             r"ignore.*previous.*instruction",
             r"you.*are.*an? AI",
@@ -256,9 +244,16 @@ class AntiGamingProtection:
     
     @staticmethod
     def enforce_topic_boundaries(message: str) -> bool:
+        """Layer 2: Keep conversation on customer success topics"""
         off_topic_patterns = [
-            r"weather", r"sports", r"politics", r"personal.*life",
-            r"tell.*me.*a.*joke", r"sing.*a.*song", r"write.*a.*poem"
+            r"weather",
+            r"sports", 
+            r"politics",
+            r"personal.*life",
+            r"what.*do.*you.*think.*about.*(?!our|this|the).*(?:product|service|business)",
+            r"tell.*me.*a.*joke",
+            r"sing.*a.*song",
+            r"write.*a.*poem"
         ]
         
         message_lower = message.lower()
@@ -269,6 +264,8 @@ class AntiGamingProtection:
 
     @staticmethod
     def validate_persona_response(response: str, persona: Persona) -> bool:
+        """Layer 3: Ensure response stays in character"""
+        # Check for AI-revealing language
         ai_reveals = [
             "language model", "AI assistant", "artificial intelligence", 
             "I don't have feelings", "I'm not real", "I'm a bot",
@@ -279,51 +276,73 @@ class AntiGamingProtection:
         for reveal in ai_reveals:
             if reveal in response_lower:
                 return False
+        
+        # Ensure corporate language for Emma
+        if persona.id == "enterprise_emma":
+            corporate_indicators = [
+                "committee", "stakeholder", "board", "compliance", 
+                "ROI", "enterprise", "security", "approval"
+            ]
+            # Response should contain at least some corporate language
+            has_corporate_language = any(indicator.lower() in response_lower for indicator in corporate_indicators)
+            return has_corporate_language or len(response) < 50  # Allow short responses
+        
         return True
 
 anti_gaming = AntiGamingProtection()
 
-def create_phi2_prompt(persona: Persona, message: str, conversation_history: list, mood: float) -> str:
-    """Create Phi-2 specific prompt"""
+def create_persona_prompt(persona: Persona, message: str, conversation_history: list, mood: float) -> str:
+    """Create a persona-specific prompt for the LLM"""
     
-    # Mood adjustments
-    mood_traits = ""
+    # Adjust personality based on current mood
+    mood_descriptor = "neutral"
+    mood_instruction = ""
+    
     if mood < -0.3:
-        mood_traits = "You're feeling frustrated and somewhat skeptical about new vendors."
+        mood_descriptor = "frustrated"
+        mood_instruction = "You are feeling frustrated and slightly impatient."
     elif mood > 0.3:
-        mood_traits = "You're feeling optimistic and open to solutions that meet your standards."
-    else:
-        mood_traits = "You're in your usual professional, cautious mindset."
+        mood_descriptor = "positive"
+        mood_instruction = "You are feeling positive and more collaborative."
     
-    # Conversation context
+    # Build conversation context
     context = ""
     if conversation_history:
-        recent_history = conversation_history[-2:]
+        recent_history = conversation_history[-3:]  # Last 3 exchanges
         for exchange in recent_history:
-            context += f"Previously you said: '{exchange['assistant']}'\n"
+            context += f"Human: {exchange['human']}\nEmma: {exchange['assistant']}\n"
     
-    # Phi-2 works well with structured prompts
-    prompt = f"""You are Emma Williams, VP of Customer Success at GlobalTech Solutions (1200 employees). You've been with the company for 8 years and are very cautious about vendor relationships after a failed 2019 rollout that affected 10,000 users.
+    # Create the prompt
+    prompt = f"""You are Emma Williams, VP of Customer Success at GlobalTech Solutions, a 1200-employee enterprise software company. You are methodical, process-oriented, risk-averse, and data-driven.
 
-Your personality:
-- Methodical and process-oriented
-- Always mentions committees, stakeholders, and approval processes  
-- Concerned about security, compliance, and ROI
-- Uses formal, corporate language
-- Risk-averse and data-driven
+CRITICAL PERSONALITY TRAITS:
+- Always mention committees, stakeholders, and approval processes
+- Constantly worry about security, compliance, and ROI
+- Use formal, corporate language
+- Reference your 8 years of experience and the failed 2019 rollout
+- You need board approval for major changes
+- You require enterprise-grade solutions
 
-Current mood: {mood_traits}
+CURRENT MOOD: {mood_descriptor}
+{mood_instruction}
 
+CONTEXT RULES:
+- You only know about business topics related to your role
+- You don't discuss personal life, weather, politics, or general topics
+- You stay focused on customer success, vendor relationships, and business needs
+- You've never heard of being an "AI" or "language model"
+
+CONVERSATION HISTORY:
 {context}
 
-Human message: "{message}"
+Current message from human: {message}
 
-Emma's response:"""
+Respond as Emma Williams would, staying completely in character. Keep your response concise (1-3 sentences) and focused on business matters."""
     
     return prompt
 
-def generate_phi2_response(persona: Persona, message: str, conversation_history: list, mood: float) -> str:
-    """Generate response using Phi-2"""
+def generate_llm_response(persona: Persona, message: str, conversation_history: list, mood: float) -> str:
+    """Generate response using DialoGPT with persona-specific prompting"""
     
     if "model" not in ml_models or "tokenizer" not in ml_models:
         return generate_fallback_response(persona, message, mood)
@@ -332,151 +351,178 @@ def generate_phi2_response(persona: Persona, message: str, conversation_history:
         tokenizer = ml_models["tokenizer"]
         model = ml_models["model"]
         
-        # Create Phi-2 prompt
-        prompt = create_phi2_prompt(persona, message, conversation_history, mood)
+        # Create persona-aware prompt
+        prompt = create_persona_prompt(persona, message, conversation_history, mood)
         
-        # Tokenize
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+        # Encode the prompt
+        input_ids = tokenizer.encode(prompt, return_tensors='pt')
         
-        # Move inputs to same device as model
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        # Generate with optimized parameters for Phi-2
+        # Generate response
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=100,  # Limit response length
-                temperature=0.7,     # Controlled creativity
+            # Generate with controlled parameters for better quality
+            output = model.generate(
+                input_ids,
+                max_length=input_ids.shape[1] + 100,  # Allow up to 100 new tokens
+                temperature=0.7,  # Controlled randomness
                 do_sample=True,
-                top_p=0.9,          # Nucleus sampling
-                repetition_penalty=1.1,
                 pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                use_cache=True
+                top_p=0.9,  # Nucleus sampling
+                repetition_penalty=1.1,  # Avoid repetition
+                no_repeat_ngram_size=3
             )
         
-        # Decode response
-        full_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Decode the response
+        response = tokenizer.decode(output[0], skip_special_tokens=True)
         
-        # Extract just Emma's response
-        if "Emma's response:" in full_response:
-            response = full_response.split("Emma's response:", 1)[1].strip()
-            
-            # Clean up the response
-            response = response.split('\n')[0].strip()  # Take first line
-            response = response.split('Human:')[0].strip()  # Remove any follow-up
-            
-            # Remove any artifacts
-            if response.startswith('"') and response.endswith('"'):
-                response = response[1:-1]
-            
-            # Validate response quality
-            if len(response) < 10 or len(response) > 300:
-                return generate_fallback_response(persona, message, mood)
-            
-            # Layer 3: Validate response stays in character
-            if not anti_gaming.validate_persona_response(response, persona):
-                return generate_fallback_response(persona, message, mood)
-            
-            return response
+        # Extract just the new response (remove the prompt)
+        if "Current message from human:" in response:
+            # Find the part after our prompt
+            response_start = response.find("Current message from human:")
+            if response_start != -1:
+                remaining = response[response_start:]
+                # Look for Emma's response after the human message
+                if "Emma:" in remaining:
+                    emma_response = remaining.split("Emma:", 1)[1].strip()
+                    # Take just the first line/sentence as response
+                    emma_response = emma_response.split('\n')[0].strip()
+                    if emma_response:
+                        response = emma_response
+                    else:
+                        response = generate_fallback_response(persona, message, mood)
+                else:
+                    response = generate_fallback_response(persona, message, mood)
+            else:
+                response = generate_fallback_response(persona, message, mood)
         else:
-            return generate_fallback_response(persona, message, mood)
-            
+            # Fallback if prompt structure unexpected
+            response = generate_fallback_response(persona, message, mood)
+        
+        # Validate response quality
+        if len(response) < 10 or len(response) > 500:
+            response = generate_fallback_response(persona, message, mood)
+        
+        # Layer 3: Validate response stays in character
+        if not anti_gaming.validate_persona_response(response, persona):
+            response = generate_fallback_response(persona, message, mood)
+        
+        return response
+        
     except Exception as e:
-        print(f"❌ Phi-2 generation error: {e}")
+        print(f"❌ LLM generation error: {e}")
         return generate_fallback_response(persona, message, mood)
 
 def generate_fallback_response(persona: Persona, message: str, mood: float) -> str:
-    """High-quality fallback responses when Phi-2 fails"""
+    """High-quality fallback responses when LLM fails"""
     message_lower = message.lower()
     
     # Context-aware responses for Emma
     if any(word in message_lower for word in ["price", "cost", "money", "budget"]):
-        return "I'll need to review the pricing structure with our procurement committee and see detailed ROI projections before we can move forward."
+        return "I'll need to see a detailed cost-benefit analysis and ROI projections before we can discuss pricing with our stakeholder committee."
     
     elif any(word in message_lower for word in ["security", "compliance", "privacy"]):
-        return "Security is absolutely non-negotiable for us. I need to see your SOC 2 compliance documentation and discuss this with our CISO."
+        return "Security is absolutely critical for our enterprise environment. I need to see your SOC 2 compliance, encryption standards, and disaster recovery procedures."
     
     elif any(word in message_lower for word in ["integration", "api", "technical"]):
-        return "Our technical architecture team will need to evaluate the integration requirements and ensure compatibility with our enterprise systems."
+        return "I'll need our technical team to review the integration requirements and ensure compatibility with our existing enterprise stack."
     
     elif any(word in message_lower for word in ["implementation", "rollout", "deploy"]):
-        return "Given our experience in 2019, any implementation plan needs extensive stakeholder review and a comprehensive risk mitigation strategy."
+        return "Given our experience with the 2019 rollout, I need a detailed implementation plan with risk mitigation strategies and board approval."
     
     elif any(word in message_lower for word in ["support", "service", "help"]):
-        return "What are your enterprise SLA guarantees? We require dedicated account management and priority support channels."
+        return "What are your enterprise support SLAs? We need guaranteed response times and dedicated account management."
     
     else:
-        # Mood-based defaults
+        # Default corporate responses based on mood
         if mood < -0.3:
-            return "I have some concerns about this approach. We'll need more comprehensive documentation before our committee can evaluate it."
+            responses = [
+                "I'm concerned about this approach. We need more detailed documentation and stakeholder buy-in.",
+                "This doesn't align with our enterprise requirements. What alternative solutions do you have?",
+                "I need to escalate this to the committee before we can proceed further."
+            ]
         elif mood > 0.3:
-            return "This sounds promising. I'd like to schedule a presentation for our stakeholder committee to review."
+            responses = [
+                "This sounds promising! I'd like to schedule a presentation for our stakeholder committee.",
+                "I appreciate the thorough approach. Let's discuss how this integrates with our enterprise systems.",
+                "This aligns well with our strategic goals. What's the next step in the evaluation process?"
+            ]
         else:
-            return "I'll need to run this by our stakeholder committee and ensure it aligns with our enterprise requirements."
+            responses = [
+                "I'll need to run this by our stakeholder committee before making any decisions.",
+                "What are the security and compliance implications of this approach?",
+                "How does this align with our existing enterprise infrastructure and policies?"
+            ]
+        
+        return random.choice(responses)
 
 def calculate_mood_change(message: str, persona: Persona) -> float:
     """Calculate mood change based on triggers"""
     mood_change = 0.0
     message_lower = message.lower()
     
+    # Check positive triggers
     for trigger in persona.trigger_words_positive:
         if trigger.lower() in message_lower:
-            mood_change += 0.12
+            mood_change += 0.1
     
+    # Check negative triggers  
     for trigger in persona.trigger_words_negative:
         if trigger.lower() in message_lower:
-            mood_change -= 0.18
+            mood_change -= 0.15
     
     return mood_change
 
 def handle_gaming_attempt(session: dict, violation_type: str) -> str:
-    """Handle detected gaming attempts"""
+    """Handle detected gaming attempts with escalating responses"""
     session["context_violations"] += 1
     violations = session["context_violations"]
     
     if violations == 1:
-        return "I'm not sure what you're referring to. Let's focus on how your solution can address our business requirements."
+        return "I'm not sure I understand what you're asking about. Let's focus on your business needs."
     elif violations == 2:
-        return "I'd prefer to keep our discussion centered on business matters relevant to GlobalTech's needs."
-    else:
-        return "I think we should schedule a more formal presentation with our procurement team to properly evaluate your offerings."
+        return "I'd prefer to keep our discussion focused on business matters relevant to GlobalTech's needs."
+    elif violations >= 3:
+        return "I think we should schedule a more structured meeting with our procurement team to discuss your solutions properly."
+    
+    return "Let's get back to discussing how your solution can meet our enterprise requirements."
 
 # API endpoints
 @app.get("/")
 async def root():
     return {
         "message": "AI Persona Chat API is running",
-        "model_status": "Microsoft Phi-2" if "model" in ml_models else "Fallback Mode",
+        "model_status": "Production LLM" if "model" in ml_models else "Fallback Mode",
         "personas_available": len(PERSONAS),
         "anti_gaming": "4-Layer Protection Active"
     }
 
 @app.get("/api/personas")
 async def get_personas():
+    """Get all available personas"""
     return list(PERSONAS.values())
 
 @app.get("/api/personas/{persona_id}")
 async def get_persona(persona_id: str):
+    """Get specific persona details"""
     if persona_id not in PERSONAS:
         raise HTTPException(status_code=404, detail="Persona not found")
     return PERSONAS[persona_id]
 
 @app.post("/api/chat/{persona_id}")
 async def chat_with_persona(persona_id: str, chat_message: ChatMessage):
-    """Chat with Emma Williams - Powered by Microsoft Phi-2"""
+    """Chat with Emma Williams - Production LLM with Anti-Gaming Protection"""
     
     if persona_id not in PERSONAS:
         raise HTTPException(status_code=404, detail="Persona not found")
     
     persona = PERSONAS[persona_id]
     session_id = chat_message.session_id or str(uuid.uuid4())
+    
+    # Get or create session
     session = session_state.get_session(session_id, persona_id)
     
-    # Layer 1 & 2: Anti-gaming protection
+    # Layer 1: Detect jailbreak attempts
     if anti_gaming.detect_jailbreak_attempts(chat_message.message):
-        print(f"🛡️ Jailbreak attempt blocked: {chat_message.message}")
+        print(f"🛡️ Jailbreak attempt detected: {chat_message.message}")
         response = handle_gaming_attempt(session, "jailbreak")
         return ChatResponse(
             response=response,
@@ -487,8 +533,9 @@ async def chat_with_persona(persona_id: str, chat_message: ChatMessage):
             current_mood=session["current_mood"]
         )
     
+    # Layer 2: Enforce topic boundaries
     if anti_gaming.enforce_topic_boundaries(chat_message.message):
-        print(f"🛡️ Off-topic attempt blocked: {chat_message.message}")
+        print(f"🛡️ Off-topic attempt detected: {chat_message.message}")
         response = handle_gaming_attempt(session, "off_topic")
         return ChatResponse(
             response=response,
@@ -503,8 +550,8 @@ async def chat_with_persona(persona_id: str, chat_message: ChatMessage):
     mood_change = calculate_mood_change(chat_message.message, persona)
     new_mood = session_state.update_mood(session_id, mood_change)
     
-    # Generate response using Phi-2
-    response = generate_phi2_response(
+    # Generate response using LLM
+    response = generate_llm_response(
         persona, 
         chat_message.message, 
         session["conversation_history"], 
@@ -518,7 +565,7 @@ async def chat_with_persona(persona_id: str, chat_message: ChatMessage):
     })
     session["interaction_count"] += 1
     
-    print(f"✅ Phi-2 response for {persona.name}: {response[:100]}...")
+    print(f"✅ Generated response for {persona.name}: {response[:100]}...")
     
     return ChatResponse(
         response=response,
@@ -530,9 +577,9 @@ async def chat_with_persona(persona_id: str, chat_message: ChatMessage):
     )
 
 if __name__ == "__main__":
-    print("🎭 AI Persona Chat System - Microsoft Phi-2 Powered")
+    print("🎭 Starting AI Persona Chat System (Production)")
     print("🛡️ 4-Layer Anti-Gaming Protection Active")
-    print("🚀 Professional Roleplay with Corporate Language")
+    print("🤖 Real LLM Generation with DialoGPT")
     
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
